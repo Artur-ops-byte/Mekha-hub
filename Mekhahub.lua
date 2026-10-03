@@ -1,7 +1,6 @@
 --[[
-    MEKHA HUB v3.8 - RETURN EDITION
+    MEKHA HUB v3.9 - FULL EDITION
     Fling Things and People
-    Anti Grab = возврат после броска
 ]]
 
 local Players = game:GetService("Players")
@@ -36,6 +35,7 @@ local Flags = {
     Fly = false, Speed = false, Jump = false, InfiniteJump = false, NoClip = false,
     ESP = false, Fullbright = false, HighlightTarget = false, XRay = false,
     Immortality = false,
+    LoopTeleport = false, Magnet = false,
 }
 local SpeedValue = 50
 local JumpValue = 100
@@ -88,7 +88,7 @@ local function EnableSuperStrength(on)
     end)
 end
 
---// ANTI GRAB = возврат после броска (Anti Fling)
+--// ANTI GRAB = возврат после броска (с фиксом доски)
 local safePos = nil
 local safeCFrame = nil
 local function EnableAntiGrab(on)
@@ -105,10 +105,17 @@ local function EnableAntiGrab(on)
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
 
+        -- ФИКС: если сидим на доске/Blobman — не возвращаем
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum and hum.SeatPart then
+            safePos = hrp.Position
+            safeCFrame = hrp.CFrame
+            return
+        end
+
         local speed = hrp.AssemblyLinearVelocity.Magnitude
         local pos = hrp.Position
 
-        -- Если скорость высокая или резко отбросило — возвращаем
         if safeCFrame and (speed > 100 or (safePos and (pos - safePos).Magnitude > 30)) then
             hrp.CFrame = safeCFrame
             hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
@@ -116,7 +123,6 @@ local function EnableAntiGrab(on)
             return
         end
 
-        -- Запоминаем только когда двигаемся нормально
         if speed < 50 then
             safePos = pos
             safeCFrame = hrp.CFrame
@@ -304,6 +310,77 @@ local function EnableImmortality(on)
             hrp.CFrame = CFrame.new(hrp.Position.X, 50, hrp.Position.Z)
         end
     end))
+end
+
+--// LOOP TELEPORT
+local loopTPPos = nil
+local function EnableLoopTeleport(on)
+    Flags.LoopTeleport = on
+    ClearFeature("LoopTeleport")
+    if not on then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    loopTPPos = hrp.Position
+    SetFeature("LoopTeleport", RunService.Heartbeat:Connect(function()
+        if not Flags.LoopTeleport or not loopTPPos then return end
+        local c = LocalPlayer.Character
+        if not c then return end
+        local h = c:FindFirstChild("HumanoidRootPart")
+        if not h then return end
+        -- Не трогаем если сидим на доске
+        local hum = c:FindFirstChildOfClass("Humanoid")
+        if hum and hum.SeatPart then return end
+        if (h.Position - loopTPPos).Magnitude > 5 then
+            h.CFrame = CFrame.new(loopTPPos)
+            h.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end
+    end))
+end
+
+--// MAGNET TARGET
+local magnetTarget = nil
+local function EnableMagnet(on)
+    Flags.Magnet = on
+    ClearFeature("Magnet")
+    if not on then return end
+    SetFeature("Magnet", RunService.Heartbeat:Connect(function()
+        if not Flags.Magnet then return end
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local target = magnetTarget
+        if not target or not target.Character then
+            local closest, dist = nil, math.huge
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and plr.Character then
+                    local tHrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                    if tHrp then
+                        local d = (tHrp.Position - hrp.Position).Magnitude
+                        if d < dist then dist = d closest = plr end
+                    end
+                end
+            end
+            target = closest
+        end
+        if target and target.Character then
+            local tHrp = target.Character:FindFirstChild("HumanoidRootPart")
+            if tHrp then
+                local dir = (hrp.Position - tHrp.Position).Unit
+                local bv = Instance.new("BodyVelocity")
+                bv.Velocity = dir * 100
+                bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+                bv.Parent = tHrp
+                Debris:AddItem(bv, 0.1)
+            end
+        end
+    end))
+end
+
+local function SetMagnetTarget(plr)
+    magnetTarget = plr
 end
 
 --// ДВИЖЕНИЕ
@@ -546,7 +623,6 @@ Logo.Font = Enum.Font.GothamBold
 Logo.Parent = Header
 Instance.new("UICorner", Logo).CornerRadius = UDim.new(0, 10)
 
--- Надпись по центру хедера с жёлтой обводкой
 local TitleCenter = Instance.new("TextLabel")
 TitleCenter.Size = UDim2.new(1, -120, 1, 0)
 TitleCenter.Position = UDim2.new(0, 60, 0, 0)
@@ -630,10 +706,14 @@ local function CreatePage(name)
     page.ScrollBarThickness = 4
     page.ScrollBarImageColor3 = C.Yellow
     page.Visible = false
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
     page.Parent = Content
     local l = Instance.new("UIListLayout")
     l.Padding = UDim.new(0, 6)
     l.Parent = page
+    l:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        page.CanvasSize = UDim2.new(0, 0, 0, l.AbsoluteContentSize.Y + 20)
+    end)
     Pages[name] = page
     return page
 end
@@ -642,13 +722,23 @@ local P_Strenght = CreatePage("Strenght")
 local P_Defense = CreatePage("Defense")
 local P_Move = CreatePage("Movement")
 local P_Visual = CreatePage("Visual")
+local P_LoopTP = CreatePage("Loop TP")
+local P_Magnet = CreatePage("Magnet")
 local P_More = CreatePage("More")
 local P_Aim = CreatePage("Наведение")
 local P_Misc = CreatePage("Misc")
 
 local function ShowPage(name, tabBtn)
     for _, p in pairs(Pages) do p.Visible = false end
-    if Pages[name] then Pages[name].Visible = true end
+    if Pages[name] then
+        Pages[name].Visible = true
+        task.defer(function()
+            local layout = Pages[name]:FindFirstChildOfClass("UIListLayout")
+            if layout then
+                Pages[name].CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
+            end
+        end)
+    end
     for _, t in ipairs(TabScroll:GetChildren()) do
         if t:IsA("TextButton") then
             TweenService:Create(t, TweenInfo.new(0.2), {BackgroundColor3 = C.PanelLight}):Play()
@@ -683,6 +773,8 @@ local tabStr = CreateTab("Strenght", P_Strenght, "💪")
 CreateTab("Defense", P_Defense, "🔒")
 CreateTab("Move", P_Move, "🏃")
 CreateTab("Visual", P_Visual, "👁")
+CreateTab("Loop TP", P_LoopTP, "🔁")
+CreateTab("Magnet", P_Magnet, "🧲")
 CreateTab("More", P_More, "➕")
 CreateTab("Наведение", P_Aim, "🎯")
 CreateTab("Misc", P_Misc, "⚙")
@@ -799,7 +891,7 @@ end
 CreateToggle(P_Strenght, "Super Strength", false, EnableSuperStrength)
 CreateSlider(P_Strenght, "Fling Strength", 100, 5000, 500, function(v) FlingStrength = v end)
 
--- DEFENSE (Anti Grab = возврат после броска)
+-- DEFENSE
 CreateToggle(P_Defense, "Anti Grab", false, EnableAntiGrab)
 CreateToggle(P_Defense, "Gucci Anti", false, EnableGucciAnti)
 CreateToggle(P_Defense, "Anti Blobman", false, EnableAntiBlobman)
@@ -823,6 +915,83 @@ CreateToggle(P_Visual, "ESP (Highlight)", false, EnableESP)
 CreateToggle(P_Visual, "Fullbright", false, EnableFullbright)
 CreateToggle(P_Visual, "X-Ray", false, EnableXRay)
 
+-- LOOP TP
+local loopHint = Instance.new("TextLabel")
+loopHint.Size = UDim2.new(1, 0, 0, 20)
+loopHint.BackgroundTransparency = 1
+loopHint.Text = "Ты застынешь на точке фиксации"
+loopHint.TextColor3 = C.TextDim
+loopHint.TextSize = 11
+loopHint.Font = Enum.Font.Gotham
+loopHint.Parent = P_LoopTP
+
+CreateToggle(P_LoopTP, "Loop Teleport", false, EnableLoopTeleport)
+CreateButton(P_LoopTP, "📍 Зафиксировать точку", Color3.fromRGB(60, 50, 40), function()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        loopTPPos = hrp.Position
+        print("[Mekha] Точка зафиксирована")
+    end
+end)
+
+-- MAGNET
+local magnetHint = Instance.new("TextLabel")
+magnetHint.Size = UDim2.new(1, 0, 0, 20)
+magnetHint.BackgroundTransparency = 1
+magnetHint.Text = "Притягивает игрока к тебе"
+magnetHint.TextColor3 = C.TextDim
+magnetHint.TextSize = 11
+magnetHint.Font = Enum.Font.Gotham
+magnetHint.Parent = P_Magnet
+
+CreateToggle(P_Magnet, "Magnet Target", false, EnableMagnet)
+
+local magnetList = Instance.new("ScrollingFrame")
+magnetList.Size = UDim2.new(1, 0, 0, 120)
+magnetList.BackgroundColor3 = C.Panel
+magnetList.BorderSizePixel = 0
+magnetList.ScrollBarThickness = 4
+magnetList.ScrollBarImageColor3 = C.Yellow
+magnetList.Parent = P_Magnet
+Instance.new("UICorner", magnetList).CornerRadius = UDim.new(0, 10)
+
+local magnetLayout = Instance.new("UIListLayout", magnetList)
+magnetLayout.Padding = UDim.new(0, 4)
+
+local function refreshMagnetList()
+    for _, c in ipairs(magnetList:GetChildren()) do
+        if c:IsA("TextButton") then c:Destroy() end
+    end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, -8, 0, 30)
+            btn.BackgroundColor3 = C.PanelLight
+            btn.Text = "  " .. plr.Name
+            btn.TextColor3 = C.Text
+            btn.TextSize = 11
+            btn.Font = Enum.Font.Gotham
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.Parent = magnetList
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+            btn.MouseButton1Click:Connect(function()
+                SetMagnetTarget(plr)
+                for _, c in ipairs(magnetList:GetChildren()) do
+                    if c:IsA("TextButton") then c.BackgroundColor3 = C.PanelLight end
+                end
+                btn.BackgroundColor3 = C.Yellow
+                btn.TextColor3 = Color3.fromRGB(20, 20, 30)
+            end)
+        end
+    end
+    magnetList.CanvasSize = UDim2.new(0, 0, 0, magnetLayout.AbsoluteContentSize.Y + 6)
+end
+
+refreshMagnetList()
+Players.PlayerAdded:Connect(function() task.wait(0.5) refreshMagnetList() end)
+Players.PlayerRemoving:Connect(function() task.wait(0.5) refreshMagnetList() end)
+
 -- MORE
 CreateToggle(P_More, "Immortality", false, EnableImmortality)
 CreateButton(P_More, "🔄 Rejoin Server", Color3.fromRGB(40, 60, 50), function()
@@ -839,7 +1008,7 @@ end)
 local aimHint = Instance.new("TextLabel")
 aimHint.Size = UDim2.new(1, 0, 0, 20)
 aimHint.BackgroundTransparency = 1
-aimHint.Text = "Наведи мышь на игрока — он подсветится жёлтым"
+aimHint.Text = "Наведи мышь на игрока"
 aimHint.TextColor3 = C.TextDim
 aimHint.TextSize = 11
 aimHint.Font = Enum.Font.Gotham
@@ -896,4 +1065,4 @@ ExitBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[Mekha Hub v3.8] Загружено! Возврат после броска активен.")
+print("[Mekha Hub v3.9] Загружено!")
