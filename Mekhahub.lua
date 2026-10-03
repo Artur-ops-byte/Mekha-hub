@@ -1,7 +1,7 @@
 --[[
-    MEKHA HUB v3.5 - STABLE EDITION
+    MEKHA HUB v3.6 - ULTIMATE
     Fling Things and People
-    Рабочие визуалы • Быстрый Anti Grab • Без лагов
+    Рабочая защита • Визуалы • Наведение • Жёлтая обводка
 ]]
 
 local Players = game:GetService("Players")
@@ -12,6 +12,7 @@ local Workspace = game:GetService("Workspace")
 local Debris = game:GetService("Debris")
 local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
 local IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
@@ -21,6 +22,7 @@ local C = {
     PanelLight = Color3.fromRGB(32, 27, 48),
     Accent = Color3.fromRGB(138, 80, 255),
     AccentLight = Color3.fromRGB(180, 130, 255),
+    Yellow = Color3.fromRGB(255, 220, 60),
     Text = Color3.fromRGB(235, 230, 250),
     TextDim = Color3.fromRGB(140, 135, 165),
     Success = Color3.fromRGB(80, 220, 140),
@@ -33,7 +35,7 @@ local Flags = {
     AntiFling = false, AntiTeleport = false, AntiKick = false,
     AntiLag = false, AutoAntiLag = false,
     Fly = false, Speed = false, Jump = false, InfiniteJump = false, NoClip = false,
-    ESP = false, Fullbright = false,
+    ESP = false, Fullbright = false, HighlightTarget = false,
     Immortality = false,
 }
 local SpeedValue = 50
@@ -43,12 +45,10 @@ local connections = {}
 local espFolder = Instance.new("Folder", game:GetService("CoreGui"))
 espFolder.Name = "MekhaESP"
 
--- Менеджер соединений (фикс лагов)
+-- Менеджер соединений
 local FeatureConns = {}
 local function SetFeature(name, conn)
-    if FeatureConns[name] then
-        pcall(function() FeatureConns[name]:Disconnect() end)
-    end
+    if FeatureConns[name] then pcall(function() FeatureConns[name]:Disconnect() end) end
     FeatureConns[name] = conn
 end
 local function ClearFeature(name)
@@ -58,33 +58,26 @@ local function ClearFeature(name)
     end
 end
 
---// ============================================
---// SUPER STRENGTH (рабочий)
---// ============================================
+--// SUPER STRENGTH
 local superConn = nil
 local function EnableSuperStrength(on)
     Flags.SuperStrength = on
     if superConn then superConn:Disconnect() superConn = nil end
     if not on then return end
-
     superConn = Workspace.ChildAdded:Connect(function(NewModel)
         if not Flags.SuperStrength then return end
         if NewModel.Name ~= "GrabParts" then return end
-
         local success, PartToImpulse = pcall(function()
             return NewModel:WaitForChild("GrabPart", 2):WaitForChild("WeldConstraint", 2).Part1
         end)
         if not success or not PartToImpulse then return end
-
         local VelocityObject = Instance.new("BodyVelocity")
-        VelocityObject.Name = "FlingVelocity"
+        VelocityObject.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
         VelocityObject.Parent = PartToImpulse
-
         local conn
         conn = NewModel:GetPropertyChangedSignal("Parent"):Connect(function()
             if NewModel.Parent == nil then
                 if Flags.SuperStrength then
-                    VelocityObject.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                     VelocityObject.Velocity = Workspace.CurrentCamera.CFrame.LookVector * FlingStrength
                     Debris:AddItem(VelocityObject, 1)
                 else
@@ -97,8 +90,9 @@ local function EnableSuperStrength(on)
 end
 
 --// ============================================
---// ЗАЩИТА (быстрая, без лагов)
+--// ЗАЩИТА — ИСПРАВЛЕННАЯ
 --// ============================================
+-- Anti Grab: удаляет GrabPoint у ТЕБЯ и блокирует чужие рядом
 local function EnableAntiGrab(on)
     Flags.AntiGrab = on
     ClearFeature("AntiGrab")
@@ -110,22 +104,25 @@ local function EnableAntiGrab(on)
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
 
-        -- Убираем GrabPoint со своего персонажа
+        -- 1. Удаляем GrabPoint со ВСЕХ частей своего персонажа
         for _, obj in ipairs(char:GetDescendants()) do
-            if obj.Name == "GrabPoint" then obj:Destroy() end
+            if obj:IsA("Attachment") and obj.Name:lower():find("grab") then
+                obj:Destroy()
+            end
         end
 
-        -- Ищем только рядом (20 стадов)
+        -- 2. Блокируем чужие GrabPoint рядом
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= LocalPlayer and plr.Character then
                 local tHrp = plr.Character:FindFirstChild("HumanoidRootPart")
-                if tHrp and (tHrp.Position - hrp.Position).Magnitude < 20 then
+                if tHrp and (tHrp.Position - hrp.Position).Magnitude < 25 then
                     for _, obj in ipairs(plr.Character:GetDescendants()) do
-                        if obj.Name == "GrabPoint" and obj:IsA("Attachment") then
+                        if obj:IsA("Attachment") and obj.Name:lower():find("grab") then
                             local p = obj.Parent
                             if p and p:IsA("BasePart") then
                                 p.CanCollide = false
                                 p.Massless = true
+                                p.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
                             end
                         end
                     end
@@ -135,6 +132,7 @@ local function EnableAntiGrab(on)
     end))
 end
 
+-- Gucci Anti: меняет физ. свойства своего персонажа
 local function EnableGucciAnti(on)
     Flags.GucciAnti = on
     ClearFeature("GucciAnti")
@@ -148,6 +146,7 @@ local function EnableGucciAnti(on)
                 pcall(function()
                     part.CustomPhysicalProperties = PhysicalProperties.new(0.01, 0.1, 0.5)
                     part.Massless = false
+                    part.CanCollide = true
                 end)
             end
         end
@@ -183,7 +182,7 @@ local function EnableAntiFling(on)
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
-        if hrp.AssemblyLinearVelocity.Magnitude > 150 then
+        if hrp.AssemblyLinearVelocity.Magnitude > 100 then
             hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
         end
@@ -200,7 +199,7 @@ local function EnableAntiKick(on)
         if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
-        if hrp.AssemblyLinearVelocity.Magnitude > 200 then
+        if hrp.AssemblyLinearVelocity.Magnitude > 150 then
             hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
         end
@@ -212,6 +211,7 @@ local function EnableAntiTeleport(on)
     Flags.AntiTeleport = on
     ClearFeature("AntiTeleport")
     if not on then return end
+    lastPos = nil
     SetFeature("AntiTeleport", RunService.Heartbeat:Connect(function()
         if not Flags.AntiTeleport then return end
         local char = LocalPlayer.Character
@@ -221,15 +221,14 @@ local function EnableAntiTeleport(on)
             local dist = (hrp.Position - lastPos).Magnitude
             if dist > 50 and dist < 5000 then
                 hrp.CFrame = CFrame.new(lastPos)
+                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             end
         end
         lastPos = hrp.Position
     end))
 end
 
---// ============================================
---// ANTI LAG (без лагов)
---// ============================================
+--// ANTI LAG
 local function EnableAntiLag(on)
     Flags.AntiLag = on
     ClearFeature("AntiLag")
@@ -274,13 +273,10 @@ end
 
 local autoAntiLagConn = nil
 local lastAutoLagTime = 0
-local AUTO_LAG_COOLDOWN = 300
-
 local function EnableAutoAntiLag(on)
     Flags.AutoAntiLag = on
     if autoAntiLagConn then autoAntiLagConn:Disconnect() autoAntiLagConn = nil end
     if not on then return end
-
     local frameCount = 0
     local lastCheck = tick()
     autoAntiLagConn = RunService.Heartbeat:Connect(function()
@@ -291,10 +287,10 @@ local function EnableAutoAntiLag(on)
             local fps = frameCount / (now - lastCheck)
             frameCount = 0
             lastCheck = now
-            if fps < 20 and now - lastAutoLagTime > AUTO_LAG_COOLDOWN then
+            if fps < 20 and now - lastAutoLagTime > 300 then
                 EnableAntiLag(true)
                 lastAutoLagTime = now
-                task.delay(AUTO_LAG_COOLDOWN, function()
+                task.delay(300, function()
                     if Flags.AutoAntiLag then EnableAntiLag(false) end
                 end)
             end
@@ -302,9 +298,7 @@ local function EnableAutoAntiLag(on)
     end)
 end
 
---// ============================================
 --// IMMORTALITY
---// ============================================
 local function EnableImmortality(on)
     Flags.Immortality = on
     ClearFeature("Immortality")
@@ -326,9 +320,7 @@ local function EnableImmortality(on)
     end))
 end
 
---// ============================================
 --// ДВИЖЕНИЕ
---// ============================================
 local flyBV, flyBG
 local function EnableFly(on)
     Flags.Fly = on
@@ -336,18 +328,15 @@ local function EnableFly(on)
     if flyBV then flyBV:Destroy() flyBV = nil end
     if flyBG then flyBG:Destroy() flyBG = nil end
     if not on then return end
-
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-
     flyBV = Instance.new("BodyVelocity", hrp)
     flyBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
     flyBG = Instance.new("BodyGyro", hrp)
     flyBG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
     flyBG.P = 1000
-
     SetFeature("Fly", RunService.RenderStepped:Connect(function()
         if not Flags.Fly or not flyBV or not flyBV.Parent then return end
         local cam = Workspace.CurrentCamera
@@ -414,14 +403,10 @@ local function EnableNoClip(on)
     end))
 end
 
---// ============================================
 --// ВИЗУАЛЫ (рабочие)
---// ============================================
-local espConn = nil
 local function AddESPToPlayer(plr)
     if plr == LocalPlayer then return end
     if not plr.Character then return end
-    if plr.Character:FindFirstChild("MekhaHighlight") then return end
     if espFolder:FindFirstChild(plr.Name) then return end
     local hl = Instance.new("Highlight")
     hl.Name = plr.Name
@@ -433,22 +418,24 @@ end
 
 local function EnableESP(on)
     Flags.ESP = on
-    if espConn then espConn:Disconnect() espConn = nil end
-
-    if on then
-        for _, plr in ipairs(Players:GetPlayers()) do
-            AddESPToPlayer(plr)
-            plr.CharacterAdded:Connect(function()
-                task.wait(1)
-                if Flags.ESP then AddESPToPlayer(plr) end
-            end)
-        end
-        espConn = Players.PlayerAdded:Connect(function(plr)
+    ClearFeature("ESP")
+    if not on then
+        espFolder:ClearAllChildren()
+        return
+    end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        AddESPToPlayer(plr)
+    end
+    SetFeature("ESP", Players.PlayerAdded:Connect(function(plr)
+        task.wait(1)
+        if Flags.ESP then AddESPToPlayer(plr) end
+    end))
+    -- Следим за респавном
+    for _, plr in ipairs(Players:GetPlayers()) do
+        Track(plr.CharacterAdded:Connect(function()
             task.wait(1)
             if Flags.ESP then AddESPToPlayer(plr) end
-        end)
-    else
-        espFolder:ClearAllChildren()
+        end))
     end
 end
 
@@ -463,6 +450,38 @@ local function EnableFullbright(on)
     end
 end
 
+--// НАВЕДЕНИЕ (Highlight Target)
+local targetHL = nil
+local function EnableHighlightTarget(on)
+    Flags.HighlightTarget = on
+    if targetHL then targetHL:Destroy() targetHL = nil end
+    if not on then return end
+    targetHL = Instance.new("Highlight")
+    targetHL.Name = "MekhaTarget"
+    targetHL.FillColor = C.Yellow
+    targetHL.OutlineColor = C.Yellow
+    targetHL.FillTransparency = 0.5
+    targetHL.OutlineTransparency = 0
+    targetHL.Parent = espFolder
+
+    ClearFeature("HighlightTarget")
+    SetFeature("HighlightTarget", RunService.RenderStepped:Connect(function()
+        if not Flags.HighlightTarget or not targetHL then return end
+        local target = Mouse.Target
+        if target then
+            local model = target:FindFirstAncestorOfClass("Model")
+            if model then
+                local plr = Players:GetPlayerFromCharacter(model)
+                if plr and plr ~= LocalPlayer then
+                    targetHL.Adornee = model
+                    return
+                end
+            end
+        end
+        targetHL.Adornee = nil
+    end))
+end
+
 --// ============================================
 --// UI
 --// ============================================
@@ -473,6 +492,36 @@ ScreenGui.IgnoreGuiInset = true
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = game:GetService("CoreGui")
 
+-- Верхняя надпись Mekha Hub 💫 (жёлтая обводка)
+local TopLabel = Instance.new("TextLabel")
+TopLabel.Name = "TopLabel"
+TopLabel.Size = UDim2.new(0, 300, 0, 40)
+TopLabel.Position = UDim2.new(0.5, -150, 0, 10)
+TopLabel.BackgroundTransparency = 1
+TopLabel.Text = "Mekha Hub 💫"
+TopLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TopLabel.TextSize = 22
+TopLabel.Font = Enum.Font.GothamBold
+TopLabel.TextStrokeColor3 = C.Yellow
+TopLabel.TextStrokeTransparency = 0
+TopLabel.TextScaled = false
+TopLabel.Parent = ScreenGui
+
+-- Пульсация надписи
+task.spawn(function()
+    while TopLabel.Parent do
+        TweenService:Create(TopLabel, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {
+            TextTransparency = 0.3
+        }):Play()
+        task.wait(1.5)
+        TweenService:Create(TopLabel, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {
+            TextTransparency = 0
+        }):Play()
+        task.wait(1.5)
+    end
+end)
+
+-- Кнопка открытия
 local OpenBtn = Instance.new("TextButton")
 OpenBtn.Size = UDim2.new(0, 55, 0, 55)
 OpenBtn.Position = UDim2.new(0, 20, 0.35, 0)
@@ -486,7 +535,7 @@ Instance.new("UICorner", OpenBtn).CornerRadius = UDim.new(1, 0)
 
 local Viewport = Workspace.CurrentCamera.ViewportSize
 local WIDTH = IsMobile and math.min(340, Viewport.X - 20) or 680
-local HEIGHT = IsMobile and math.min(Viewport.Y - 100, 440) or 450
+local HEIGHT = IsMobile and math.min(Viewport.Y - 120, 440) or 450
 
 local Main = Instance.new("Frame")
 Main.Size = UDim2.new(0, WIDTH, 0, HEIGHT)
@@ -502,8 +551,12 @@ Main.Draggable = true
 Main.Visible = false
 Main.Parent = ScreenGui
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 16)
+
+-- Жёлтая обводка окна
 local ms = Instance.new("UIStroke", Main)
-ms.Color = C.Accent ms.Thickness = 1.5 ms.Transparency = 0.3
+ms.Color = C.Yellow
+ms.Thickness = 2
+ms.Transparency = 0
 
 local Header = Instance.new("Frame")
 Header.Size = UDim2.new(1, 0, 0, 55)
@@ -538,8 +591,8 @@ local SubLbl = Instance.new("TextLabel")
 SubLbl.Size = UDim2.new(1, -160, 0, 16)
 SubLbl.Position = UDim2.new(0, 54, 0, 28)
 SubLbl.BackgroundTransparency = 1
-SubLbl.Text = "v3.5 • Stable"
-SubLbl.TextColor3 = C.TextDim
+SubLbl.Text = "v3.6 • Ultimate"
+SubLbl.TextColor3 = C.Yellow
 SubLbl.TextSize = 10
 SubLbl.Font = Enum.Font.Gotham
 SubLbl.TextXAlignment = Enum.TextXAlignment.Left
@@ -613,7 +666,7 @@ local function CreatePage(name)
     page.BackgroundTransparency = 1
     page.BorderSizePixel = 0
     page.ScrollBarThickness = 4
-    page.ScrollBarImageColor3 = C.Accent
+    page.ScrollBarImageColor3 = C.Yellow
     page.Visible = false
     page.Parent = Content
     local l = Instance.new("UIListLayout")
@@ -627,6 +680,7 @@ local P_Strength = CreatePage("Strength")
 local P_Defense = CreatePage("Defense")
 local P_Move = CreatePage("Movement")
 local P_Visual = CreatePage("Visuals")
+local P_Aim = CreatePage("Наведение")
 local P_Misc = CreatePage("Misc")
 
 local function ShowPage(name, tabBtn)
@@ -639,8 +693,8 @@ local function ShowPage(name, tabBtn)
         end
     end
     if tabBtn then
-        TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.Accent}):Play()
-        tabBtn.TextColor3 = C.Text
+        TweenService:Create(tabBtn, TweenInfo.new(0.2), {BackgroundColor3 = C.Yellow}):Play()
+        tabBtn.TextColor3 = Color3.fromRGB(20, 20, 30)
     end
 end
 
@@ -666,6 +720,7 @@ local tabStrength = CreateTab("Strength", P_Strength, "💪")
 CreateTab("Defense", P_Defense, "🔒")
 CreateTab("Move", P_Move, "🏃")
 CreateTab("Visual", P_Visual, "👁")
+CreateTab("Наведение", P_Aim, "🎯")
 CreateTab("Misc", P_Misc, "⚙")
 ShowPage("Strength", tabStrength)
 
@@ -697,9 +752,9 @@ local function CreateToggle(parent, name, default, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 52, 0, 24)
     btn.Position = UDim2.new(1, -58, 0.5, -12)
-    btn.BackgroundColor3 = default and C.Accent or C.PanelLight
+    btn.BackgroundColor3 = default and C.Yellow or C.PanelLight
     btn.Text = default and "ON" or "OFF"
-    btn.TextColor3 = C.Text
+    btn.TextColor3 = default and Color3.fromRGB(20,20,30) or C.Text
     btn.TextSize = 10
     btn.Font = Enum.Font.GothamBold
     btn.Parent = frame
@@ -708,7 +763,10 @@ local function CreateToggle(parent, name, default, callback)
     btn.MouseButton1Click:Connect(function()
         state = not state
         btn.Text = state and "ON" or "OFF"
-        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = state and C.Accent or C.PanelLight}):Play()
+        TweenService:Create(btn, TweenInfo.new(0.2), {
+            BackgroundColor3 = state and C.Yellow or C.PanelLight
+        }):Play()
+        btn.TextColor3 = state and Color3.fromRGB(20,20,30) or C.Text
         if callback then callback(state) end
     end)
     return frame
@@ -752,7 +810,7 @@ local function CreateSlider(parent, name, min, max, default, callback)
     Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
     local fill = Instance.new("Frame")
     fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-    fill.BackgroundColor3 = C.Accent
+    fill.BackgroundColor3 = C.Yellow
     fill.Parent = bar
     Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
     local dragging = false
@@ -799,6 +857,22 @@ CreateSlider(P_Move, "Jump Value", 50, 500, 100, function(v) JumpValue = v end)
 -- VISUAL
 CreateToggle(P_Visual, "ESP", false, EnableESP)
 CreateToggle(P_Visual, "Fullbright", false, EnableFullbright)
+
+-- НАВЕДЕНИЕ
+local aimHint = Instance.new("TextLabel")
+aimHint.Size = UDim2.new(1, 0, 0, 20)
+aimHint.BackgroundTransparency = 1
+aimHint.Text = "Наведи мышь на игрока — он подсветится жёлтым"
+aimHint.TextColor3 = C.TextDim
+aimHint.TextSize = 11
+aimHint.Font = Enum.Font.Gotham
+aimHint.Parent = P_Aim
+
+CreateToggle(P_Aim, "Highlight Target", false, EnableHighlightTarget)
+CreateToggle(P_Aim, "Auto Aim", false, function(on)
+    -- Заглушка (в FTAP нет стрельбы, поэтому авто-наведение смысла не имеет)
+    if on then print("[Mekha] Auto Aim не поддерживается в FTAP") end
+end)
 
 -- MISC
 CreateToggle(P_Misc, "Immortality", false, EnableImmortality)
@@ -856,4 +930,4 @@ ExitBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[Mekha Hub v3.5] Загружено! Stable edition.")
+print("[Mekha Hub v3.6] Загружено! Ultimate edition.")
