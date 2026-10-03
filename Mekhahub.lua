@@ -1,7 +1,7 @@
 --[[
-    MEKHA HUB v3.4 - HONEST EDITION
-    Только рабочие функции
-    Super Strength + Защита + Движение + Визуал
+    MEKHA HUB v3.5 - STABLE EDITION
+    Fling Things and People
+    Рабочие визуалы • Быстрый Anti Grab • Без лагов
 ]]
 
 local Players = game:GetService("Players")
@@ -28,7 +28,7 @@ local C = {
 }
 
 local Flags = {
-    SuperStrength = false, SuperGrab = false,
+    SuperStrength = false,
     AntiGrab = false, GucciAnti = false, AntiBlobman = false,
     AntiFling = false, AntiTeleport = false, AntiKick = false,
     AntiLag = false, AutoAntiLag = false,
@@ -43,13 +43,23 @@ local connections = {}
 local espFolder = Instance.new("Folder", game:GetService("CoreGui"))
 espFolder.Name = "MekhaESP"
 
-local function Track(conn)
-    table.insert(connections, conn)
-    return conn
+-- Менеджер соединений (фикс лагов)
+local FeatureConns = {}
+local function SetFeature(name, conn)
+    if FeatureConns[name] then
+        pcall(function() FeatureConns[name]:Disconnect() end)
+    end
+    FeatureConns[name] = conn
+end
+local function ClearFeature(name)
+    if FeatureConns[name] then
+        pcall(function() FeatureConns[name]:Disconnect() end)
+        FeatureConns[name] = nil
+    end
 end
 
 --// ============================================
---// SUPER STRENGTH (РАБОЧИЙ)
+--// SUPER STRENGTH (рабочий)
 --// ============================================
 local superConn = nil
 local function EnableSuperStrength(on)
@@ -87,33 +97,37 @@ local function EnableSuperStrength(on)
 end
 
 --// ============================================
---// ЗАЩИТА (ИСПРАВЛЕННАЯ)
+--// ЗАЩИТА (быстрая, без лагов)
 --// ============================================
 local function EnableAntiGrab(on)
     Flags.AntiGrab = on
+    ClearFeature("AntiGrab")
     if not on then return end
-
-    Track(RunService.Heartbeat:Connect(function()
+    SetFeature("AntiGrab", RunService.Heartbeat:Connect(function()
         if not Flags.AntiGrab then return end
         local char = LocalPlayer.Character
         if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
 
         -- Убираем GrabPoint со своего персонажа
         for _, obj in ipairs(char:GetDescendants()) do
-            if obj.Name == "GrabPoint" and obj:IsA("Attachment") then
-                obj:Destroy()
-            end
+            if obj.Name == "GrabPoint" then obj:Destroy() end
         end
 
-        -- Блокируем чужие GrabPoint рядом
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj.Name == "GrabPoint" and obj:IsA("Attachment") then
-                local parent = obj.Parent
-                if parent and parent:IsA("BasePart") then
-                    local plr = Players:GetPlayerFromCharacter(parent.Parent)
-                    if plr and plr ~= LocalPlayer then
-                        parent.CanCollide = false
-                        parent.Massless = true
+        -- Ищем только рядом (20 стадов)
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local tHrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                if tHrp and (tHrp.Position - hrp.Position).Magnitude < 20 then
+                    for _, obj in ipairs(plr.Character:GetDescendants()) do
+                        if obj.Name == "GrabPoint" and obj:IsA("Attachment") then
+                            local p = obj.Parent
+                            if p and p:IsA("BasePart") then
+                                p.CanCollide = false
+                                p.Massless = true
+                            end
+                        end
                     end
                 end
             end
@@ -123,8 +137,9 @@ end
 
 local function EnableGucciAnti(on)
     Flags.GucciAnti = on
+    ClearFeature("GucciAnti")
     if not on then return end
-    Track(RunService.Heartbeat:Connect(function()
+    SetFeature("GucciAnti", RunService.Heartbeat:Connect(function()
         if not Flags.GucciAnti then return end
         local char = LocalPlayer.Character
         if not char then return end
@@ -141,8 +156,9 @@ end
 
 local function EnableAntiBlobman(on)
     Flags.AntiBlobman = on
+    ClearFeature("AntiBlobman")
     if not on then return end
-    Track(RunService.Heartbeat:Connect(function()
+    SetFeature("AntiBlobman", RunService.Heartbeat:Connect(function()
         if not Flags.AntiBlobman then return end
         local char = LocalPlayer.Character
         if not char then return end
@@ -159,8 +175,9 @@ end
 
 local function EnableAntiFling(on)
     Flags.AntiFling = on
+    ClearFeature("AntiFling")
     if not on then return end
-    Track(RunService.Heartbeat:Connect(function()
+    SetFeature("AntiFling", RunService.Heartbeat:Connect(function()
         if not Flags.AntiFling then return end
         local char = LocalPlayer.Character
         if not char then return end
@@ -173,32 +190,11 @@ local function EnableAntiFling(on)
     end))
 end
 
-local lastPos = nil
-local function EnableAntiTeleport(on)
-    Flags.AntiTeleport = on
-    if not on then return end
-    task.spawn(function()
-        while Flags.AntiTeleport do
-            task.wait(0.1)
-            local char = LocalPlayer.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                if lastPos then
-                    local dist = (hrp.Position - lastPos).Magnitude
-                    if dist > 50 and dist < 5000 then
-                        hrp.CFrame = CFrame.new(lastPos)
-                    end
-                end
-                lastPos = hrp.Position
-            end
-        end
-    end)
-end
-
 local function EnableAntiKick(on)
     Flags.AntiKick = on
+    ClearFeature("AntiKick")
     if not on then return end
-    Track(RunService.Heartbeat:Connect(function()
+    SetFeature("AntiKick", RunService.Heartbeat:Connect(function()
         if not Flags.AntiKick then return end
         local char = LocalPlayer.Character
         if not char then return end
@@ -211,23 +207,39 @@ local function EnableAntiKick(on)
     end))
 end
 
---// ============================================
---// ANTI LAG
---// ============================================
-local antiLagActive = false
-local antiLagConns = {}
+local lastPos = nil
+local function EnableAntiTeleport(on)
+    Flags.AntiTeleport = on
+    ClearFeature("AntiTeleport")
+    if not on then return end
+    SetFeature("AntiTeleport", RunService.Heartbeat:Connect(function()
+        if not Flags.AntiTeleport then return end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if lastPos then
+            local dist = (hrp.Position - lastPos).Magnitude
+            if dist > 50 and dist < 5000 then
+                hrp.CFrame = CFrame.new(lastPos)
+            end
+        end
+        lastPos = hrp.Position
+    end))
+end
 
+--// ============================================
+--// ANTI LAG (без лагов)
+--// ============================================
 local function EnableAntiLag(on)
-    antiLagActive = on
-    if not on then
-        for _, c in ipairs(antiLagConns) do pcall(function() c:Disconnect() end) end
-        antiLagConns = {}
-        return
-    end
+    Flags.AntiLag = on
+    ClearFeature("AntiLag")
+    if not on then return end
+
     pcall(function()
         Lighting.GlobalShadows = false
         Lighting.FogEnd = 9e9
     end)
+
     for _, obj in ipairs(Workspace:GetDescendants()) do
         pcall(function()
             if obj:IsA("ParticleEmitter") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
@@ -243,8 +255,9 @@ local function EnableAntiLag(on)
             end
         end)
     end
-    table.insert(antiLagConns, Workspace.DescendantAdded:Connect(function(obj)
-        if not antiLagActive then return end
+
+    SetFeature("AntiLag", Workspace.DescendantAdded:Connect(function(obj)
+        if not Flags.AntiLag then return end
         pcall(function()
             if obj:IsA("ParticleEmitter") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
                 obj.Enabled = false
@@ -259,19 +272,19 @@ local function EnableAntiLag(on)
     end))
 end
 
-local autoAntiLagActive = false
 local autoAntiLagConn = nil
 local lastAutoLagTime = 0
 local AUTO_LAG_COOLDOWN = 300
 
 local function EnableAutoAntiLag(on)
-    autoAntiLagActive = on
+    Flags.AutoAntiLag = on
     if autoAntiLagConn then autoAntiLagConn:Disconnect() autoAntiLagConn = nil end
     if not on then return end
+
     local frameCount = 0
     local lastCheck = tick()
     autoAntiLagConn = RunService.Heartbeat:Connect(function()
-        if not autoAntiLagActive then return end
+        if not Flags.AutoAntiLag then return end
         frameCount += 1
         local now = tick()
         if now - lastCheck >= 1 then
@@ -282,7 +295,7 @@ local function EnableAutoAntiLag(on)
                 EnableAntiLag(true)
                 lastAutoLagTime = now
                 task.delay(AUTO_LAG_COOLDOWN, function()
-                    if autoAntiLagActive then EnableAntiLag(false) end
+                    if Flags.AutoAntiLag then EnableAntiLag(false) end
                 end)
             end
         end
@@ -294,8 +307,9 @@ end
 --// ============================================
 local function EnableImmortality(on)
     Flags.Immortality = on
+    ClearFeature("Immortality")
     if not on then return end
-    Track(RunService.Heartbeat:Connect(function()
+    SetFeature("Immortality", RunService.Heartbeat:Connect(function()
         if not Flags.Immortality then return end
         local char = LocalPlayer.Character
         if not char then return end
@@ -318,39 +332,42 @@ end
 local flyBV, flyBG
 local function EnableFly(on)
     Flags.Fly = on
+    ClearFeature("Fly")
+    if flyBV then flyBV:Destroy() flyBV = nil end
+    if flyBG then flyBG:Destroy() flyBG = nil end
+    if not on then return end
+
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    if on then
-        flyBV = Instance.new("BodyVelocity", hrp)
-        flyBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-        flyBG = Instance.new("BodyGyro", hrp)
-        flyBG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-        flyBG.P = 1000
-        Track(RunService.RenderStepped:Connect(function()
-            if not Flags.Fly or not flyBV or not flyBV.Parent then return end
-            local cam = Workspace.CurrentCamera
-            local move = Vector3.new()
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.new(0, 1, 0) end
-            flyBV.Velocity = move.Magnitude > 0 and move.Unit * SpeedValue or Vector3.new(0, 0, 0)
-            flyBG.CFrame = cam.CFrame
-        end))
-    else
-        if flyBV then flyBV:Destroy() end
-        if flyBG then flyBG:Destroy() end
-    end
+
+    flyBV = Instance.new("BodyVelocity", hrp)
+    flyBV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    flyBG = Instance.new("BodyGyro", hrp)
+    flyBG.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    flyBG.P = 1000
+
+    SetFeature("Fly", RunService.RenderStepped:Connect(function()
+        if not Flags.Fly or not flyBV or not flyBV.Parent then return end
+        local cam = Workspace.CurrentCamera
+        local move = Vector3.new()
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.new(0, 1, 0) end
+        flyBV.Velocity = move.Magnitude > 0 and move.Unit * SpeedValue or Vector3.new(0, 0, 0)
+        flyBG.CFrame = cam.CFrame
+    end))
 end
 
 local function EnableSpeed(on)
     Flags.Speed = on
+    ClearFeature("Speed")
     if not on then return end
-    Track(RunService.Heartbeat:Connect(function()
+    SetFeature("Speed", RunService.Heartbeat:Connect(function()
         if not Flags.Speed then return end
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -360,8 +377,9 @@ end
 
 local function EnableJump(on)
     Flags.Jump = on
+    ClearFeature("Jump")
     if not on then return end
-    Track(RunService.Heartbeat:Connect(function()
+    SetFeature("Jump", RunService.Heartbeat:Connect(function()
         if not Flags.Jump then return end
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -371,8 +389,9 @@ end
 
 local function EnableInfJump(on)
     Flags.InfiniteJump = on
+    ClearFeature("InfiniteJump")
     if not on then return end
-    Track(UserInputService.JumpRequest:Connect(function()
+    SetFeature("InfiniteJump", UserInputService.JumpRequest:Connect(function()
         if not Flags.InfiniteJump then return end
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -382,8 +401,9 @@ end
 
 local function EnableNoClip(on)
     Flags.NoClip = on
+    ClearFeature("NoClip")
     if not on then return end
-    Track(RunService.Stepped:Connect(function()
+    SetFeature("NoClip", RunService.Stepped:Connect(function()
         if not Flags.NoClip then return end
         local char = LocalPlayer.Character
         if char then
@@ -394,17 +414,39 @@ local function EnableNoClip(on)
     end))
 end
 
+--// ============================================
+--// ВИЗУАЛЫ (рабочие)
+--// ============================================
+local espConn = nil
+local function AddESPToPlayer(plr)
+    if plr == LocalPlayer then return end
+    if not plr.Character then return end
+    if plr.Character:FindFirstChild("MekhaHighlight") then return end
+    if espFolder:FindFirstChild(plr.Name) then return end
+    local hl = Instance.new("Highlight")
+    hl.Name = plr.Name
+    hl.Adornee = plr.Character
+    hl.FillColor = C.Danger
+    hl.OutlineColor = Color3.new(1, 1, 1)
+    hl.Parent = espFolder
+end
+
 local function EnableESP(on)
     Flags.ESP = on
+    if espConn then espConn:Disconnect() espConn = nil end
+
     if on then
         for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character then
-                local hl = Instance.new("Highlight", espFolder)
-                hl.Adornee = plr.Character
-                hl.FillColor = C.Danger
-                hl.OutlineColor = Color3.new(1, 1, 1)
-            end
+            AddESPToPlayer(plr)
+            plr.CharacterAdded:Connect(function()
+                task.wait(1)
+                if Flags.ESP then AddESPToPlayer(plr) end
+            end)
         end
+        espConn = Players.PlayerAdded:Connect(function(plr)
+            task.wait(1)
+            if Flags.ESP then AddESPToPlayer(plr) end
+        end)
     else
         espFolder:ClearAllChildren()
     end
@@ -496,7 +538,7 @@ local SubLbl = Instance.new("TextLabel")
 SubLbl.Size = UDim2.new(1, -160, 0, 16)
 SubLbl.Position = UDim2.new(0, 54, 0, 28)
 SubLbl.BackgroundTransparency = 1
-SubLbl.Text = "v3.4 • Рабочая"
+SubLbl.Text = "v3.5 • Stable"
 SubLbl.TextColor3 = C.TextDim
 SubLbl.TextSize = 10
 SubLbl.Font = Enum.Font.Gotham
@@ -734,9 +776,6 @@ end
 -- STRENGTH
 CreateToggle(P_Strength, "Super Strength", false, EnableSuperStrength)
 CreateSlider(P_Strength, "Fling Strength", 100, 1000000000, 8500000, function(v) FlingStrength = v end)
-CreateToggle(P_Strength, "Super Grab", false, function(on)
-    -- Super Grab не поддерживается без ремоутов
-end)
 
 -- DEFENSE
 CreateToggle(P_Defense, "Anti Grab", false, EnableAntiGrab)
@@ -768,6 +807,7 @@ CreateButton(P_Misc, "🔄 Rejoin Server", Color3.fromRGB(40, 60, 50), function(
 end)
 CreateButton(P_Misc, "🛑 Выгрузить", Color3.fromRGB(100, 30, 50), function()
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+    for _, c in pairs(FeatureConns) do pcall(function() c:Disconnect() end) end
     espFolder:ClearAllChildren()
     ScreenGui:Destroy()
 end)
@@ -806,6 +846,7 @@ CloseBtn.MouseButton1Click:Connect(CloseMenu)
 
 ExitBtn.MouseButton1Click:Connect(function()
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+    for _, c in pairs(FeatureConns) do pcall(function() c:Disconnect() end) end
     espFolder:ClearAllChildren()
     pcall(function()
         Lighting.Ambient = Color3.fromRGB(70, 70, 70)
@@ -815,4 +856,4 @@ ExitBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-print("[Mekha Hub v3.4] Загружено! Только рабочие функции.")
+print("[Mekha Hub v3.5] Загружено! Stable edition.")
